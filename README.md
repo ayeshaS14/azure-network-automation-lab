@@ -1,7 +1,7 @@
 # Azure Network Automation Lab
 
 End-to-end network automation lab combining GNS3 router data collection,
-Terraform-managed Azure infrastructure, and a Python utility for pushing
+Terraform managed Azure infrastructure, and a Python utility for pushing
 collected data to Azure Blob Storage.
 
 ---
