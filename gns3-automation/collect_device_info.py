@@ -14,25 +14,15 @@ from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import AzureError
 
 
-# Device definitions to fill in your GNS3 router IPs and credentials here
+# Device definitions — update host/credentials to match your lab topology
 DEVICES = [
     {
-        "device_type": "cisco_ios",
-        "host": "192.168.1.1",        # Router 1 management IP
-        "username": "admin",           # SSH username
-        "password": "cisco",           # SSH password
-        "secret": "cisco",             # Enable secret (for privileged mode)
+        "device_type": "cisco_xe",    # Cisco IOS XE (CSR1000v, Cat8000v, etc.)
+        "host": "10.10.20.48",        # Router management IP
+        "username": "developer",       # SSH username
+        "password": "C1sco12345",      # SSH password
         "port": 22,
         "name": "R1",                  # Friendly label used in output filenames
-    },
-    {
-        "device_type": "cisco_ios",
-        "host": "192.168.1.2",        # Router 2 management IP
-        "username": "admin",
-        "password": "cisco",
-        "secret": "cisco",
-        "port": 22,
-        "name": "R2",
     },
 ]
 
@@ -166,7 +156,6 @@ def collect_from_device(device_config: dict, timestamp: str):
 
     try:
         connection = ConnectHandler(**conn_params)
-        connection.enable()  # Enter privileged EXEC mode using the 'secret'
         print(f"  [connected] {name}")
 
         results = {}
@@ -189,7 +178,7 @@ def collect_from_device(device_config: dict, timestamp: str):
     except NetmikoTimeoutException:
         print(f"  [ERROR] Connection timed out for {name} ({conn_params['host']})")
     except NetmikoAuthenticationException:
-        print(f"  [ERROR] Authentication failed for {name} — check username/password/secret")
+        print(f"  [ERROR] Authentication failed for {name} — check username/password")
     except Exception as exc:
         print(f"  [ERROR] Unexpected error on {name}: {exc}")
 
