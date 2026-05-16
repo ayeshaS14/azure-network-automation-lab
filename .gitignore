@@ -1,0 +1,37 @@
+# -------------------------
+# Credentials & secrets
+# -------------------------
+.env
+*.env
+.env.*
+
+# -------------------------
+# Terraform
+# -------------------------
+# Provider plugins (downloaded by terraform init — large, reproducible)
+terraform/.terraform/
+
+# State files (may contain resource secrets)
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+
+# Local variable overrides (may contain sensitive values)
+terraform/terraform.tfvars
+
+# Provider lock file (reproducible from terraform init)
+terraform/.terraform.lock.hcl
+
+# -------------------------
+# GNS3 collected output
+# -------------------------
+# Timestamped router data files — not source code
+gns3-automation/collected_output/
+
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/

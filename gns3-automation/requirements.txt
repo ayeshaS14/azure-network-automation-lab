@@ -1,0 +1,5 @@
+# Python dependencies for the GNS3 automation scripts
+# Install with:  pip install -r requirements.txt
+
+netmiko==4.3.0        # SSH automation for Cisco IOS and other NOS platforms
+paramiko==3.4.0       # SSH transport library (Netmiko dependency)
