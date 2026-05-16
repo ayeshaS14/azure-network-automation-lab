@@ -247,3 +247,158 @@ resource "azurerm_subnet_network_security_group_association" "storage" {
   subnet_id                 = azurerm_subnet.storage.id
   network_security_group_id = azurerm_network_security_group.storage.id
 }
+
+# ---------------------------------------------------------------------------
+# Public IP — management VM
+# Static allocation so the address is known immediately after apply and
+# remains stable across VM stop/start cycles.
+# ---------------------------------------------------------------------------
+resource "azurerm_public_ip" "management" {
+  name                = "pip-vm-management"
+  resource_group_name = azurerm_resource_group.lab.name
+  location            = azurerm_resource_group.lab.location
+  allocation_method   = "Static"   # dynamic IPs are only assigned on VM start
+  sku                 = "Standard" # Standard SKU — Basic has zero quota on this subscription
+  tags                = var.tags
+}
+
+# ---------------------------------------------------------------------------
+# Network Interface — management VM
+# Attaches the VM to the management subnet and associates the public IP so
+# the VM is reachable over SSH from the internet.
+# ---------------------------------------------------------------------------
+resource "azurerm_network_interface" "management" {
+  name                = "nic-vm-management"
+  resource_group_name = azurerm_resource_group.lab.name
+  location            = azurerm_resource_group.lab.location
+  tags                = var.tags
+
+  ip_configuration {
+    name                          = "ipconfig-management"
+    subnet_id                     = azurerm_subnet.management.id
+    private_ip_address_allocation = "Dynamic"              # Azure assigns a free IP from the subnet
+    public_ip_address_id          = azurerm_public_ip.management.id
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Linux VM — management
+# Jump host / control node for SSH-ing into the rest of the lab.
+# Password authentication is disabled; use the SSH key set in var.admin_ssh_public_key.
+# ---------------------------------------------------------------------------
+resource "azurerm_linux_virtual_machine" "management" {
+  name                            = "vm-management"
+  resource_group_name             = azurerm_resource_group.lab.name
+  location                        = azurerm_resource_group.lab.location
+  size                            = "Standard_B1s"          # 1 vCPU, 1 GB RAM — cheapest burstable size
+  admin_username                  = "azureuser"
+  disable_password_authentication = true                    # SSH key only; no password login
+  network_interface_ids           = [azurerm_network_interface.management.id]
+  tags                            = var.tags
+
+  # SSH public key — replace the placeholder in variables.tf with your real key
+  admin_ssh_key {
+    username   = "azureuser"
+    public_key = var.admin_ssh_public_key
+  }
+
+  # Ubuntu 22.04 LTS (Jammy Jellyfish) — Gen2 image
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  os_disk {
+    name                 = "osdisk-vm-management"
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"   # Standard HDD — lowest cost for a lab OS disk
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Network Interface — application VM
+# Internal-only NIC; no public IP because application VMs are accessed via
+# the management VM or a load balancer, not directly from the internet.
+# ---------------------------------------------------------------------------
+resource "azurerm_network_interface" "application" {
+  name                = "nic-vm-application"
+  resource_group_name = azurerm_resource_group.lab.name
+  location            = azurerm_resource_group.lab.location
+  tags                = var.tags
+
+  ip_configuration {
+    name                          = "ipconfig-application"
+    subnet_id                     = azurerm_subnet.application.id
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Linux VM — application
+# App-tier VM reachable from the management VM over SSH (port 22 is allowed
+# from the management subnet by the application NSG).
+# ---------------------------------------------------------------------------
+resource "azurerm_linux_virtual_machine" "application" {
+  name                            = "vm-application"
+  resource_group_name             = azurerm_resource_group.lab.name
+  location                        = azurerm_resource_group.lab.location
+  size                            = "Standard_B1s"
+  admin_username                  = "azureuser"
+  disable_password_authentication = true
+  network_interface_ids           = [azurerm_network_interface.application.id]
+  tags                            = var.tags
+
+  admin_ssh_key {
+    username   = "azureuser"
+    public_key = var.admin_ssh_public_key
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  os_disk {
+    name                 = "osdisk-vm-application"
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Storage Account
+# Holds all blob data for the lab (collected router output, backups, etc.).
+# Name must be globally unique across all of Azure, 3-24 lowercase alphanumeric
+# characters only — no hyphens or underscores allowed.
+# Standard_LRS replicates data three times within a single data centre;
+# sufficient for a lab where durability requirements are low.
+# ---------------------------------------------------------------------------
+resource "azurerm_storage_account" "lab" {
+  name                     = "stnetautomationlab"
+  resource_group_name      = azurerm_resource_group.lab.name
+  location                 = azurerm_resource_group.lab.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  # Disable public blob access at the account level — individual containers
+  # must explicitly opt in if public access is ever needed.
+  allow_nested_items_to_be_public = false
+
+  tags = var.tags
+}
+
+# ---------------------------------------------------------------------------
+# Blob Container — device-backups
+# Logical namespace inside the storage account for router/device backup files.
+# container_access_type = "private" means no anonymous access; every request
+# must be authenticated via the storage account key or an Azure AD identity.
+# ---------------------------------------------------------------------------
+resource "azurerm_storage_container" "device_backups" {
+  name                  = "device-backups"
+  storage_account_name  = azurerm_storage_account.lab.name
+  container_access_type = "private"
+}

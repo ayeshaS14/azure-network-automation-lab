@@ -6,7 +6,7 @@
 variable "location" {
   description = "Azure region where all resources will be created."
   type        = string
-  default     = "East US"
+  default     = "West US 2"
 }
 
 variable "resource_group_name" {
@@ -46,6 +46,15 @@ variable "subnet_storage_cidr" {
   description = "CIDR for the storage subnet — isolates storage-tier resources."
   type        = string
   default     = "10.0.3.0/24"
+}
+
+# ---------------------------------------------------------------------------
+# VM authentication
+# ---------------------------------------------------------------------------
+variable "admin_ssh_public_key" {
+  description = "SSH public key for the azureuser account on both VMs. Replace the placeholder with the output of: cat ~/.ssh/id_rsa.pub"
+  type        = string
+  default     = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0000PLACEHOLDER000 replace-this-with-your-real-key"
 }
 
 # ---------------------------------------------------------------------------

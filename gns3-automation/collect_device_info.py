@@ -10,10 +10,11 @@ import re
 from datetime import datetime
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetmikoTimeoutException, NetmikoAuthenticationException
+from azure.storage.blob import BlobServiceClient
+from azure.core.exceptions import AzureError
 
-# ---------------------------------------------------------------------------
-# Device definitions — fill in your GNS3 router IPs and credentials here
-# ---------------------------------------------------------------------------
+
+# Device definitions to fill in your GNS3 router IPs and credentials here
 DEVICES = [
     {
         "device_type": "cisco_ios",
@@ -46,6 +47,16 @@ COMMANDS = {
 # Directory where collected output files will be saved
 OUTPUT_DIR = "collected_output"
 
+# ---------------------------------------------------------------------------
+# Azure Blob Storage configuration
+# AZURE_STORAGE_KEY must be set in your shell before running this script:
+#   export AZURE_STORAGE_KEY="<primary or secondary key from the Azure portal>"
+# The key is read at runtime so it is never stored in source code.
+# ---------------------------------------------------------------------------
+STORAGE_ACCOUNT_NAME = "stnetautomationlab"
+STORAGE_CONTAINER_NAME = "device-backups"
+STORAGE_ACCOUNT_URL = f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
+
 
 def ensure_output_dir():
     """Create the output directory if it does not already exist."""
@@ -62,6 +73,52 @@ def save_output(filepath: str, content: str):
     with open(filepath, "w") as f:
         f.write(content)
     print(f"  [saved] {filepath}")
+
+
+def upload_to_blob(local_filepath: str) -> str | None:
+    """
+    Upload a single local file to the Azure Blob Storage container.
+
+    The blob is stored under the container root using the file's basename,
+    e.g. "R1_interfaces_20240516_143022.txt".
+
+    Returns the full blob URL on success, or None if the upload fails.
+    The caller decides whether a failure is fatal; this function only warns.
+    """
+    # Read the storage key from the environment — never hard-code it
+    storage_key = os.environ.get("AZURE_STORAGE_KEY", "")
+    if not storage_key:
+        print("  [WARN] AZURE_STORAGE_KEY is not set — skipping blob upload")
+        return None
+
+    blob_name = os.path.basename(local_filepath)
+
+    try:
+        # Authenticate with the account key; no connection string needed
+        service_client = BlobServiceClient(
+            account_url=STORAGE_ACCOUNT_URL,
+            credential=storage_key,
+        )
+        blob_client = service_client.get_blob_client(
+            container=STORAGE_CONTAINER_NAME,
+            blob=blob_name,
+        )
+
+        # Open the already-written local file and stream it to Azure
+        with open(local_filepath, "rb") as data:
+            blob_client.upload_blob(data, overwrite=True)
+
+        blob_url = blob_client.url
+        print(f"  [uploaded] {blob_url}")
+        return blob_url
+
+    except AzureError as exc:
+        # Upload failure is non-fatal — the file is already saved locally
+        print(f"  [WARN] Blob upload failed for '{blob_name}': {exc}")
+        return None
+    except OSError as exc:
+        print(f"  [WARN] Could not open '{local_filepath}' for upload: {exc}")
+        return None
 
 
 def detect_down_interfaces(interfaces_output: str, device_name: str):
@@ -120,6 +177,7 @@ def collect_from_device(device_config: dict, timestamp: str):
 
             filepath = build_filename(name, label, timestamp)
             save_output(filepath, output)
+            upload_to_blob(filepath)   # non-fatal if upload fails
 
         connection.disconnect()
         print(f"  [disconnected] {name}")
